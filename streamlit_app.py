@@ -599,9 +599,11 @@ else:
                 if search_edit or category_filter != "すべて":
                     st.success(f"{len(filtered_articles)}件の記事が見つかりました")
                 
-                article_to_edit = st.selectbox("編集する記事を選択", sorted(filtered_articles))
+                # 記事選択時にキーを変更して強制的に再描画
+                article_to_edit = st.selectbox("編集する記事を選択", sorted(filtered_articles), key="article_selector")
             
                 if article_to_edit:
+                    # 選択された記事のデータを取得（毎回最新のデータを取得）
                     current_data = st.session_state.encyclopedia[article_to_edit]
                     
                     current_categories = current_data.get("category", [])
@@ -610,8 +612,14 @@ else:
                     else:
                         category_str = current_categories
                     
-                    new_title = st.text_input("📝 記事タイトル", value=article_to_edit)
-                    new_category = st.text_input("🏷️ カテゴリー", value=category_str, placeholder="カンマ区切りで複数指定可能")
+                    # 区切り線で視覚的に分離
+                    st.markdown("---")
+                    st.subheader(f"📝 「{article_to_edit}」を編集中")
+                    st.markdown("---")
+                    
+                    # タイトルとカテゴリーの編集（記事ごとに一意のキーを使用）
+                    new_title = st.text_input("📝 記事タイトル", value=article_to_edit, key=f"title_{article_to_edit}")
+                    new_category = st.text_input("🏷️ カテゴリー", value=category_str, placeholder="カンマ区切りで複数指定可能", key=f"category_{article_to_edit}")
                     
                     existing_images = current_data.get('images', [])
                     if existing_images:
@@ -626,7 +634,7 @@ else:
                     uploaded_images = st.file_uploader("🖼️ 新しい画像をアップロード（任意・複数選択可・空欄の場合は既存の画像を保持）", 
                                                      type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
                                                      accept_multiple_files=True,
-                                                     key="edit_images")
+                                                     key=f"edit_images_{article_to_edit}")
                     if uploaded_images:
                         st.write(f"**新しい画像: {len(uploaded_images)}枚**")
                         new_img_cols = st.columns(min(len(uploaded_images), 3))
@@ -634,32 +642,33 @@ else:
                             with new_img_cols[idx % 3]:
                                 st.image(img_file, caption=f"新しい画像 {idx + 1}", width=150)
                     
-                    delete_images = st.checkbox("🗑️ すべての画像を削除する")
+                    delete_images = st.checkbox("🗑️ すべての画像を削除する", key=f"delete_img_{article_to_edit}")
                     
                     st.markdown("### ✍️ 記事内容を編集")
                     
-                    # マーカーボタン（編集用）
+                    # マーカーボタン（編集用・記事ごとに一意のキー）
                     st.markdown("**🖍️ マーカーを挿入:**")
                     edit_marker_col1, edit_marker_col2, edit_marker_col3, edit_marker_col4 = st.columns(4)
                     
                     edit_marker_instruction = ""
                     with edit_marker_col1:
-                        if st.button("🟨 黄色マーカー", use_container_width=True, key="edit_yellow"):
+                        if st.button("🟨 黄色マーカー", use_container_width=True, key=f"edit_yellow_{article_to_edit}"):
                             edit_marker_instruction = "\n\n**選択した文字を** `<yellow>文字</yellow>` **で囲んでください**"
                     with edit_marker_col2:
-                        if st.button("🟩 緑マーカー", use_container_width=True, key="edit_green"):
+                        if st.button("🟩 緑マーカー", use_container_width=True, key=f"edit_green_{article_to_edit}"):
                             edit_marker_instruction = "\n\n**選択した文字を** `<green>文字</green>` **で囲んでください**"
                     with edit_marker_col3:
-                        if st.button("🟦 青マーカー", use_container_width=True, key="edit_blue"):
+                        if st.button("🟦 青マーカー", use_container_width=True, key=f"edit_blue_{article_to_edit}"):
                             edit_marker_instruction = "\n\n**選択した文字を** `<blue>文字</blue>` **で囲んでください**"
                     with edit_marker_col4:
-                        if st.button("🟥 赤マーカー", use_container_width=True, key="edit_red"):
+                        if st.button("🟥 赤マーカー", use_container_width=True, key=f"edit_red_{article_to_edit}"):
                             edit_marker_instruction = "\n\n**選択した文字を** `<red>文字</red>` **で囲んでください**"
                     
                     if edit_marker_instruction:
                         st.info(edit_marker_instruction)
                     
-                    new_content = st.text_area("記事本文", value=current_data.get("content", ""), height=300, key="edit_content")
+                    # テキストエリアに記事ごとに一意のキーを使用
+                    new_content = st.text_area("記事本文", value=current_data.get("content", ""), height=300, key=f"edit_content_{article_to_edit}")
                     
                     # プレビュー
                     if new_content:
@@ -668,7 +677,7 @@ else:
                         preview_content = render_markers_to_html(new_content)
                         st.markdown(preview_content, unsafe_allow_html=True)
                     
-                    if st.button("💾 更新を保存", type="primary", use_container_width=True):
+                    if st.button("💾 更新を保存", type="primary", use_container_width=True, key=f"save_{article_to_edit}"):
                         if not new_title:
                             st.error("タイトルを入力してください")
                         elif not new_content:
