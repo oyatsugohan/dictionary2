@@ -7,6 +7,7 @@ from datetime import datetime
 from io import BytesIO
 from PIL import Image
 import os
+import re
 
 # データベースファイルのパス（スクリプトと同じディレクトリに保存）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -79,37 +80,37 @@ def decode_image(base64_string):
         return Image.open(BytesIO(base64.b64decode(base64_string)))
     return None
 
-# マーカーをHTMLに変換
-def convert_markers_to_html(text):
-    """カスタムマーカー記法をHTMLに変換"""
-    import re
+# マーカーをHTMLに変換（表示用）
+def render_markers_to_html(text):
+    """保存されたマーカータグをHTMLに変換して表示"""
+    # <yellow>文字</yellow> → 黄色マーカー
+    text = re.sub(r'<yellow>(.*?)</yellow>', 
+                  r'<mark style="background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;">\1</mark>', 
+                  text, flags=re.DOTALL)
     
-    # 黄色マーカー ==文字==
-    text = re.sub(r'==([^=]+)==', 
-                  r"<mark style='background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
-                  text)
+    # <green>文字</green> → 緑マーカー
+    text = re.sub(r'<green>(.*?)</green>', 
+                  r'<mark style="background-color: #8bc34a; padding: 2px 4px; border-radius: 3px;">\1</mark>', 
+                  text, flags=re.DOTALL)
     
-    # 緑マーカー ++文字++
-    text = re.sub(r'\+\+([^+]+)\+\+', 
-                  r"<mark style='background-color: #8bc34a; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
-                  text)
+    # <blue>文字</blue> → 青マーカー
+    text = re.sub(r'<blue>(.*?)</blue>', 
+                  r'<mark style="background-color: #03a9f4; color: white; padding: 2px 4px; border-radius: 3px;">\1</mark>', 
+                  text, flags=re.DOTALL)
     
-    # 青マーカー @@文字@@
-    text = re.sub(r'@@([^@]+)@@', 
-                  r"<mark style='background-color: #03a9f4; color: white; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
-                  text)
+    # <red>文字</red> → 赤マーカー
+    text = re.sub(r'<red>(.*?)</red>', 
+                  r'<mark style="background-color: #f44336; color: white; padding: 2px 4px; border-radius: 3px;">\1</mark>', 
+                  text, flags=re.DOTALL)
     
-    # 赤マーカー ##文字## (ただしMarkdownの見出しと区別)
-    # 行頭の##は見出しとして扱い、文中の##文字##のみマーカーとして扱う
-    text = re.sub(r'(?<!^)(?<!\n)##([^#\n]+)##', 
-                  r"<mark style='background-color: #f44336; color: white; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
-                  text)
+    # 改行を<br>に変換
+    text = text.replace('\n', '<br>')
     
     return text
 
 # 記事内容から他の記事タイトルを検出してリンク化
 def create_article_links(content, all_titles, current_title):
-    """記事内容に含まれる他の記事タイトルをハイライト（改行を保持）"""
+    """記事内容に含まれる他の記事タイトルをハイライト"""
     linked_content = content
     # 現在の記事以外のタイトルを検索（長いタイトルから順に処理して部分一致を防ぐ）
     sorted_titles = sorted([t for t in all_titles if t != current_title], key=len, reverse=True)
@@ -117,13 +118,10 @@ def create_article_links(content, all_titles, current_title):
     for title in sorted_titles:
         if title in linked_content:
             # タイトルを太字でハイライト
-            linked_content = linked_content.replace(title, f"**{title}**")
+            linked_content = linked_content.replace(title, f"<strong>{title}</strong>")
     
     # マーカーをHTMLに変換
-    linked_content = convert_markers_to_html(linked_content)
-    
-    # 改行を<br>タグに変換してMarkdownで正しく表示
-    linked_content = linked_content.replace('\n', '  \n')
+    linked_content = render_markers_to_html(linked_content)
     
     return linked_content
 
@@ -208,35 +206,6 @@ def delete_article(conn, username, title):
     c.execute('DELETE FROM articles WHERE username = ? AND title = ?', (username, title))
     conn.commit()
 
-# 記事タイトルを変更
-def rename_article(conn, username, old_title, new_title):
-    """記事タイトルを変更"""
-    c = conn.cursor()
-    try:
-        c.execute('''
-            UPDATE articles
-            SET title = ?, updated = ?
-            WHERE username = ? AND title = ?
-        ''', (new_title, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username, old_title))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
-# 記事内容から他の記事タイトルを検出してリンク化
-def create_article_links(content, all_titles, current_title):
-    """記事内容に含まれる他の記事タイトルをハイライト（改行を保持）"""
-    linked_content = content
-    sorted_titles = sorted([t for t in all_titles if t != current_title], key=len, reverse=True)
-    
-    for title in sorted_titles:
-        if title in linked_content:
-            linked_content = linked_content.replace(title, f"**{title}**")
-    
-    linked_content = linked_content.replace('\n', '  \n')
-    
-    return linked_content
-
 # データベースのバックアップ
 def backup_database():
     """データベースをバックアップ"""
@@ -249,6 +218,28 @@ def backup_database():
 
 # アプリの設定
 st.set_page_config(page_title="オリジナル百科事典", page_icon="📚", layout="wide")
+
+# カスタムCSS
+st.markdown("""
+<style>
+    .marker-buttons {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .marker-btn {
+        padding: 5px 15px;
+        border-radius: 5px;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    .yellow-btn { background-color: #ffeb3b; }
+    .green-btn { background-color: #8bc34a; }
+    .blue-btn { background-color: #03a9f4; color: white; }
+    .red-btn { background-color: #f44336; color: white; }
+</style>
+""", unsafe_allow_html=True)
 
 # データベース初期化
 if "db_conn" not in st.session_state:
@@ -468,67 +459,107 @@ else:
     elif menu == "➕ 新規記事作成":
         st.header("新規記事作成")
         
-        with st.form("new_article"):
-            title = st.text_input("📝 記事タイトル", placeholder="例: Python")
-            category = st.text_input("🏷️ カテゴリー", placeholder="例: プログラミング言語, 技術 (カンマ区切りで複数指定可能)")
+        title = st.text_input("📝 記事タイトル", placeholder="例: Python")
+        category = st.text_input("🏷️ カテゴリー", placeholder="例: プログラミング言語, 技術 (カンマ区切りで複数指定可能)")
+        
+        # 画像アップロード（複数対応）
+        uploaded_images = st.file_uploader("🖼️ 画像を追加（任意・複数選択可）", 
+                                          type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
+                                          accept_multiple_files=True)
+        if uploaded_images:
+            st.write(f"**選択された画像: {len(uploaded_images)}枚**")
+            preview_cols = st.columns(min(len(uploaded_images), 3))
+            for idx, img_file in enumerate(uploaded_images):
+                with preview_cols[idx % 3]:
+                    st.image(img_file, caption=f"画像 {idx + 1}", width=150)
+        
+        st.markdown("### ✍️ 記事内容")
+        
+        # マーカーボタン
+        st.markdown("**🖍️ マーカーを挿入:**")
+        marker_col1, marker_col2, marker_col3, marker_col4 = st.columns(4)
+        
+        marker_instruction = ""
+        with marker_col1:
+            if st.button("🟨 黄色マーカー", use_container_width=True):
+                marker_instruction = "\n\n**選択した文字を** `<yellow>文字</yellow>` **で囲んでください**"
+        with marker_col2:
+            if st.button("🟩 緑マーカー", use_container_width=True):
+                marker_instruction = "\n\n**選択した文字を** `<green>文字</green>` **で囲んでください**"
+        with marker_col3:
+            if st.button("🟦 青マーカー", use_container_width=True):
+                marker_instruction = "\n\n**選択した文字を** `<blue>文字</blue>` **で囲んでください**"
+        with marker_col4:
+            if st.button("🟥 赤マーカー", use_container_width=True):
+                marker_instruction = "\n\n**選択した文字を** `<red>文字</red>` **で囲んでください**"
+        
+        if marker_instruction:
+            st.info(marker_instruction)
+        
+        # マーカーの使い方説明
+        with st.expander("📖 マーカーの使い方詳細"):
+            st.markdown("""
+            文章中でマーカーを引きたい部分を以下のタグで囲んでください：
             
-            uploaded_images = st.file_uploader("🖼️ 画像を追加（任意・複数選択可）", 
-                                              type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
-                                              accept_multiple_files=True)
-            if uploaded_images:
-                st.write(f"**選択された画像: {len(uploaded_images)}枚**")
-                preview_cols = st.columns(min(len(uploaded_images), 3))
-                for idx, img_file in enumerate(uploaded_images):
-                    with preview_cols[idx % 3]:
-                        st.image(img_file, caption=f"画像 {idx + 1}", width=150)
+            **使い方:**
+            - 黄色: `<yellow>重要な文字</yellow>`
+            - 緑色: `<green>良い点</green>`
+            - 青色: `<blue>注意点</blue>`
+            - 赤色: `<red>警告</red>`
             
-            content = st.text_area("✍️ 記事内容", height=300, 
-                                  placeholder="記事の内容を入力してください...\n\nマーカーの使い方:\n==黄色マーカー==\n++緑マーカー++\n@@青マーカー@@\n##赤マーカー##")
+            **例:**
+            ```
+            Pythonは<yellow>人気のプログラミング言語</yellow>です。
+            <green>初心者にも優しく</green>、多くの用途があります。
+            ただし<red>セキュリティには注意</red>が必要です。
+            ```
             
-            # マーカー使用例の表示
-            with st.expander("🖍️ マーカーの使い方"):
-                st.markdown("""
-                記事内で以下の記号で文字を囲むと、色付きマーカーが引けます：
+            **表示例:**
+            """, unsafe_allow_html=False)
+            
+            example_text = "Pythonは<yellow>人気のプログラミング言語</yellow>です。<green>初心者にも優しく</green>、多くの用途があります。ただし<red>セキュリティには注意</red>が必要です。"
+            st.markdown(render_markers_to_html(example_text), unsafe_allow_html=True)
+        
+        content = st.text_area("記事本文を入力", height=300, 
+                              placeholder="記事の内容を入力してください...\n\nマーカーの使い方:\n<yellow>黄色</yellow>\n<green>緑</green>\n<blue>青</blue>\n<red>赤</red>",
+                              key="new_content")
+        
+        # プレビュー
+        if content:
+            st.markdown("---")
+            st.markdown("### 👁️ プレビュー")
+            preview_content = render_markers_to_html(content)
+            st.markdown(preview_content, unsafe_allow_html=True)
+        
+        if st.button("✅ 記事を保存", type="primary", use_container_width=True):
+            if not title:
+                st.error("タイトルを入力してください")
+            elif title in st.session_state.encyclopedia:
+                st.error("同じタイトルの記事が既に存在します")
+            elif not content:
+                st.error("記事内容を入力してください")
+            else:
+                categories = [cat.strip() for cat in category.split(",") if cat.strip()]
+                if not categories:
+                    categories = ["未分類"]
                 
-                - `==文字==` → <mark style='background-color: #ffeb3b; padding: 2px 4px;'>黄色マーカー</mark>
-                - `++文字++` → <mark style='background-color: #8bc34a; padding: 2px 4px;'>緑マーカー</mark>
-                - `@@文字@@` → <mark style='background-color: #03a9f4; color: white; padding: 2px 4px;'>青マーカー</mark>
-                - `##文字##` → <mark style='background-color: #f44336; color: white; padding: 2px 4px;'>赤マーカー</mark>
+                images_data = []
+                if uploaded_images:
+                    for img_file in uploaded_images:
+                        img_file.seek(0)
+                        encoded = encode_image(img_file)
+                        if encoded:
+                            images_data.append(encoded)
                 
-                **例:** `これは==重要==な情報です` → これは<mark style='background-color: #ffeb3b; padding: 2px 4px;'>重要</mark>な情報です
-                """, unsafe_allow_html=True)
-            
-            submitted = st.form_submit_button("✅ 記事を保存")
-            
-            if submitted:
-                if not title:
-                    st.error("タイトルを入力してください")
-                elif title in st.session_state.encyclopedia:
-                    st.error("同じタイトルの記事が既に存在します")
-                elif not content:
-                    st.error("記事内容を入力してください")
-                else:
-                    categories = [cat.strip() for cat in category.split(",") if cat.strip()]
-                    if not categories:
-                        categories = ["未分類"]
-                    
-                    images_data = []
-                    if uploaded_images:
-                        for img_file in uploaded_images:
-                            img_file.seek(0)
-                            encoded = encode_image(img_file)
-                            if encoded:
-                                images_data.append(encoded)
-                    
-                    # データベースに保存
-                    save_article(st.session_state.db_conn, st.session_state.username, 
-                               title, categories, content, images_data)
-                    
-                    # セッション状態を更新
-                    st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.db_conn, st.session_state.username)
-                    
-                    st.success(f"✅ 記事「{title}」を保存しました！")
-                    st.balloons()
+                # データベースに保存
+                save_article(st.session_state.db_conn, st.session_state.username, 
+                           title, categories, content, images_data)
+                
+                # セッション状態を更新
+                st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.db_conn, st.session_state.username)
+                
+                st.success(f"✅ 記事「{title}」を保存しました！")
+                st.balloons()
     
     elif menu == "📝 記事を編集":
         st.header("記事を編集")
@@ -579,87 +610,101 @@ else:
                     else:
                         category_str = current_categories
                     
-                    with st.form("edit_article"):
-                        new_title = st.text_input("📝 記事タイトル", value=article_to_edit)
-                        new_category = st.text_input("🏷️ カテゴリー", value=category_str, placeholder="カンマ区切りで複数指定可能")
-                        
-                        existing_images = current_data.get('images', [])
-                        if existing_images:
-                            st.write(f"**現在の画像: {len(existing_images)}枚**")
-                            current_img_cols = st.columns(min(len(existing_images), 3))
-                            for idx, img_data in enumerate(existing_images):
-                                current_img = decode_image(img_data)
-                                if current_img:
-                                    with current_img_cols[idx % 3]:
-                                        st.image(current_img, caption=f"画像 {idx + 1}", width=150)
-                        
-                        uploaded_images = st.file_uploader("🖼️ 新しい画像をアップロード（任意・複数選択可・空欄の場合は既存の画像を保持）", 
-                                                         type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
-                                                         accept_multiple_files=True)
-                        if uploaded_images:
-                            st.write(f"**新しい画像: {len(uploaded_images)}枚**")
-                            new_img_cols = st.columns(min(len(uploaded_images), 3))
-                            for idx, img_file in enumerate(uploaded_images):
-                                with new_img_cols[idx % 3]:
-                                    st.image(img_file, caption=f"新しい画像 {idx + 1}", width=150)
-                        
-                        delete_images = st.checkbox("🗑️ すべての画像を削除する")
-                        
-                        new_content = st.text_area("✍️ 記事内容", value=current_data.get("content", ""), height=300,
-                                                  help="マーカー: ==黄色==、++緑++、@@青@@、##赤##")
-                        
-                        # マーカー使用例の表示
-                        with st.expander("🖍️ マーカーの使い方"):
-                            st.markdown("""
-                            記事内で以下の記号で文字を囲むと、色付きマーカーが引けます：
+                    new_title = st.text_input("📝 記事タイトル", value=article_to_edit)
+                    new_category = st.text_input("🏷️ カテゴリー", value=category_str, placeholder="カンマ区切りで複数指定可能")
+                    
+                    existing_images = current_data.get('images', [])
+                    if existing_images:
+                        st.write(f"**現在の画像: {len(existing_images)}枚**")
+                        current_img_cols = st.columns(min(len(existing_images), 3))
+                        for idx, img_data in enumerate(existing_images):
+                            current_img = decode_image(img_data)
+                            if current_img:
+                                with current_img_cols[idx % 3]:
+                                    st.image(current_img, caption=f"画像 {idx + 1}", width=150)
+                    
+                    uploaded_images = st.file_uploader("🖼️ 新しい画像をアップロード（任意・複数選択可・空欄の場合は既存の画像を保持）", 
+                                                     type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
+                                                     accept_multiple_files=True,
+                                                     key="edit_images")
+                    if uploaded_images:
+                        st.write(f"**新しい画像: {len(uploaded_images)}枚**")
+                        new_img_cols = st.columns(min(len(uploaded_images), 3))
+                        for idx, img_file in enumerate(uploaded_images):
+                            with new_img_cols[idx % 3]:
+                                st.image(img_file, caption=f"新しい画像 {idx + 1}", width=150)
+                    
+                    delete_images = st.checkbox("🗑️ すべての画像を削除する")
+                    
+                    st.markdown("### ✍️ 記事内容を編集")
+                    
+                    # マーカーボタン（編集用）
+                    st.markdown("**🖍️ マーカーを挿入:**")
+                    edit_marker_col1, edit_marker_col2, edit_marker_col3, edit_marker_col4 = st.columns(4)
+                    
+                    edit_marker_instruction = ""
+                    with edit_marker_col1:
+                        if st.button("🟨 黄色マーカー", use_container_width=True, key="edit_yellow"):
+                            edit_marker_instruction = "\n\n**選択した文字を** `<yellow>文字</yellow>` **で囲んでください**"
+                    with edit_marker_col2:
+                        if st.button("🟩 緑マーカー", use_container_width=True, key="edit_green"):
+                            edit_marker_instruction = "\n\n**選択した文字を** `<green>文字</green>` **で囲んでください**"
+                    with edit_marker_col3:
+                        if st.button("🟦 青マーカー", use_container_width=True, key="edit_blue"):
+                            edit_marker_instruction = "\n\n**選択した文字を** `<blue>文字</blue>` **で囲んでください**"
+                    with edit_marker_col4:
+                        if st.button("🟥 赤マーカー", use_container_width=True, key="edit_red"):
+                            edit_marker_instruction = "\n\n**選択した文字を** `<red>文字</red>` **で囲んでください**"
+                    
+                    if edit_marker_instruction:
+                        st.info(edit_marker_instruction)
+                    
+                    new_content = st.text_area("記事本文", value=current_data.get("content", ""), height=300, key="edit_content")
+                    
+                    # プレビュー
+                    if new_content:
+                        st.markdown("---")
+                        st.markdown("### 👁️ プレビュー")
+                        preview_content = render_markers_to_html(new_content)
+                        st.markdown(preview_content, unsafe_allow_html=True)
+                    
+                    if st.button("💾 更新を保存", type="primary", use_container_width=True):
+                        if not new_title:
+                            st.error("タイトルを入力してください")
+                        elif not new_content:
+                            st.error("記事内容を入力してください")
+                        else:
+                            categories = [cat.strip() for cat in new_category.split(",") if cat.strip()]
+                            if not categories:
+                                categories = ["未分類"]
                             
-                            - `==文字==` → <mark style='background-color: #ffeb3b; padding: 2px 4px;'>黄色マーカー</mark>
-                            - `++文字++` → <mark style='background-color: #8bc34a; padding: 2px 4px;'>緑マーカー</mark>
-                            - `@@文字@@` → <mark style='background-color: #03a9f4; color: white; padding: 2px 4px;'>青マーカー</mark>
-                            - `##文字##` → <mark style='background-color: #f44336; color: white; padding: 2px 4px;'>赤マーカー</mark>
+                            images_data = current_data.get('images', [])
                             
-                            **例:** `これは==重要==な情報です` → これは<mark style='background-color: #ffeb3b; padding: 2px 4px;'>重要</mark>な情報です
-                            """, unsafe_allow_html=True)
-                        
-                        submitted = st.form_submit_button("💾 更新を保存")
-                        
-                        if submitted:
-                            if not new_title:
-                                st.error("タイトルを入力してください")
-                            elif not new_content:
-                                st.error("記事内容を入力してください")
-                            else:
-                                categories = [cat.strip() for cat in new_category.split(",") if cat.strip()]
-                                if not categories:
-                                    categories = ["未分類"]
-                                
-                                images_data = current_data.get('images', [])
-                                
-                                if delete_images:
-                                    images_data = []
-                                elif uploaded_images:
-                                    images_data = []
-                                    for img_file in uploaded_images:
-                                        img_file.seek(0)
-                                        encoded = encode_image(img_file)
-                                        if encoded:
-                                            images_data.append(encoded)
-                                
-                                # タイトルが変更された場合
-                                if new_title != article_to_edit:
-                                    # 古い記事を削除
-                                    delete_article(st.session_state.db_conn, st.session_state.username, article_to_edit)
-                                
-                                # 新しい記事として保存
-                                save_article(st.session_state.db_conn, st.session_state.username,
-                                           new_title, categories, new_content, images_data,
-                                           created=current_data.get("created"))
-                                
-                                # セッション状態を更新
-                                st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.db_conn, st.session_state.username)
-                                
-                                st.success(f"✅ 記事「{new_title}」を更新しました！")
-                                st.rerun()
+                            if delete_images:
+                                images_data = []
+                            elif uploaded_images:
+                                images_data = []
+                                for img_file in uploaded_images:
+                                    img_file.seek(0)
+                                    encoded = encode_image(img_file)
+                                    if encoded:
+                                        images_data.append(encoded)
+                            
+                            # タイトルが変更された場合
+                            if new_title != article_to_edit:
+                                # 古い記事を削除
+                                delete_article(st.session_state.db_conn, st.session_state.username, article_to_edit)
+                            
+                            # 新しい記事として保存
+                            save_article(st.session_state.db_conn, st.session_state.username,
+                                       new_title, categories, new_content, images_data,
+                                       created=current_data.get("created"))
+                            
+                            # セッション状態を更新
+                            st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.db_conn, st.session_state.username)
+                            
+                            st.success(f"✅ 記事「{new_title}」を更新しました！")
+                            st.rerun()
         else:
             st.info("編集する記事がありません")
     
@@ -753,4 +798,4 @@ else:
     
     # フッター
     st.markdown("---")
-    st.markdown("💡 **ヒント**: サイドバーから機能を選択して、あなただけの百科事典を作りましょう！")
+    st.markdown("💡 **ヒント**: マーカーを使うには `<yellow>文字</yellow>` のように囲んでください！")
