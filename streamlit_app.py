@@ -79,6 +79,54 @@ def decode_image(base64_string):
         return Image.open(BytesIO(base64.b64decode(base64_string)))
     return None
 
+# マーカーをHTMLに変換
+def convert_markers_to_html(text):
+    """カスタムマーカー記法をHTMLに変換"""
+    import re
+    
+    # 黄色マーカー ==文字==
+    text = re.sub(r'==([^=]+)==', 
+                  r"<mark style='background-color: #ffeb3b; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
+                  text)
+    
+    # 緑マーカー ++文字++
+    text = re.sub(r'\+\+([^+]+)\+\+', 
+                  r"<mark style='background-color: #8bc34a; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
+                  text)
+    
+    # 青マーカー @@文字@@
+    text = re.sub(r'@@([^@]+)@@', 
+                  r"<mark style='background-color: #03a9f4; color: white; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
+                  text)
+    
+    # 赤マーカー ##文字## (ただしMarkdownの見出しと区別)
+    # 行頭の##は見出しとして扱い、文中の##文字##のみマーカーとして扱う
+    text = re.sub(r'(?<!^)(?<!\n)##([^#\n]+)##', 
+                  r"<mark style='background-color: #f44336; color: white; padding: 2px 4px; border-radius: 3px;'>\1</mark>", 
+                  text)
+    
+    return text
+
+# 記事内容から他の記事タイトルを検出してリンク化
+def create_article_links(content, all_titles, current_title):
+    """記事内容に含まれる他の記事タイトルをハイライト（改行を保持）"""
+    linked_content = content
+    # 現在の記事以外のタイトルを検索（長いタイトルから順に処理して部分一致を防ぐ）
+    sorted_titles = sorted([t for t in all_titles if t != current_title], key=len, reverse=True)
+    
+    for title in sorted_titles:
+        if title in linked_content:
+            # タイトルを太字でハイライト
+            linked_content = linked_content.replace(title, f"**{title}**")
+    
+    # マーカーをHTMLに変換
+    linked_content = convert_markers_to_html(linked_content)
+    
+    # 改行を<br>タグに変換してMarkdownで正しく表示
+    linked_content = linked_content.replace('\n', '  \n')
+    
+    return linked_content
+
 # ユーザー登録
 def register_user(conn, username, password):
     """新規ユーザーを登録"""
@@ -395,7 +443,7 @@ else:
                     st.markdown("### 本文")
                     
                     linked_content = create_article_links(article_content, all_titles, st.session_state.selected_article)
-                    st.markdown(linked_content)
+                    st.markdown(linked_content, unsafe_allow_html=True)
                     
                     st.markdown("---")
                     st.markdown("### 🔗 本文中で言及されている記事")
@@ -434,7 +482,21 @@ else:
                     with preview_cols[idx % 3]:
                         st.image(img_file, caption=f"画像 {idx + 1}", width=150)
             
-            content = st.text_area("✍️ 記事内容", height=300, placeholder="記事の内容を入力してください...")
+            content = st.text_area("✍️ 記事内容", height=300, 
+                                  placeholder="記事の内容を入力してください...\n\nマーカーの使い方:\n==黄色マーカー==\n++緑マーカー++\n@@青マーカー@@\n##赤マーカー##")
+            
+            # マーカー使用例の表示
+            with st.expander("🖍️ マーカーの使い方"):
+                st.markdown("""
+                記事内で以下の記号で文字を囲むと、色付きマーカーが引けます：
+                
+                - `==文字==` → <mark style='background-color: #ffeb3b; padding: 2px 4px;'>黄色マーカー</mark>
+                - `++文字++` → <mark style='background-color: #8bc34a; padding: 2px 4px;'>緑マーカー</mark>
+                - `@@文字@@` → <mark style='background-color: #03a9f4; color: white; padding: 2px 4px;'>青マーカー</mark>
+                - `##文字##` → <mark style='background-color: #f44336; color: white; padding: 2px 4px;'>赤マーカー</mark>
+                
+                **例:** `これは==重要==な情報です` → これは<mark style='background-color: #ffeb3b; padding: 2px 4px;'>重要</mark>な情報です
+                """, unsafe_allow_html=True)
             
             submitted = st.form_submit_button("✅ 記事を保存")
             
@@ -543,7 +605,21 @@ else:
                         
                         delete_images = st.checkbox("🗑️ すべての画像を削除する")
                         
-                        new_content = st.text_area("✍️ 記事内容", value=current_data.get("content", ""), height=300)
+                        new_content = st.text_area("✍️ 記事内容", value=current_data.get("content", ""), height=300,
+                                                  help="マーカー: ==黄色==、++緑++、@@青@@、##赤##")
+                        
+                        # マーカー使用例の表示
+                        with st.expander("🖍️ マーカーの使い方"):
+                            st.markdown("""
+                            記事内で以下の記号で文字を囲むと、色付きマーカーが引けます：
+                            
+                            - `==文字==` → <mark style='background-color: #ffeb3b; padding: 2px 4px;'>黄色マーカー</mark>
+                            - `++文字++` → <mark style='background-color: #8bc34a; padding: 2px 4px;'>緑マーカー</mark>
+                            - `@@文字@@` → <mark style='background-color: #03a9f4; color: white; padding: 2px 4px;'>青マーカー</mark>
+                            - `##文字##` → <mark style='background-color: #f44336; color: white; padding: 2px 4px;'>赤マーカー</mark>
+                            
+                            **例:** `これは==重要==な情報です` → これは<mark style='background-color: #ffeb3b; padding: 2px 4px;'>重要</mark>な情報です
+                            """, unsafe_allow_html=True)
                         
                         submitted = st.form_submit_button("💾 更新を保存")
                         
