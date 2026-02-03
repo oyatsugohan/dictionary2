@@ -241,8 +241,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# データベース初期化
-if "db_conn" not in st.session_state:
+# ★★★ データベース初期化を改善（永続的な接続を確保）★★★
+if "db_conn" not in st.session_state or st.session_state.db_conn is None:
+    st.session_state.db_conn = init_db()
+    st.session_state.db_initialized = True
+
+# データベース接続の健全性チェック
+try:
+    # 接続が有効か確認
+    st.session_state.db_conn.execute("SELECT 1")
+except:
+    # 接続が無効な場合は再接続
     st.session_state.db_conn = init_db()
 
 # セッション状態の初期化
@@ -265,7 +274,9 @@ if not st.session_state.logged_in:
         st.info(f"**データベースの場所**: {DB_FILE}")
         if os.path.exists(DB_FILE):
             file_size = os.path.getsize(DB_FILE) / 1024  # KB
-            st.success(f"データベースが見つかりました（サイズ: {file_size:.2f} KB）")
+            st.success(f"✅ データベースが見つかりました（サイズ: {file_size:.2f} KB）")
+            st.success("💾 **すべてのデータは永続的に保存されます！**")
+            st.info("電源を切っても、PCを再起動しても、数日後でもデータは保持されます。")
         else:
             st.warning("データベースは初回起動時に作成されます")
     
@@ -344,6 +355,7 @@ else:
             if os.path.exists(DB_FILE):
                 file_size = os.path.getsize(DB_FILE) / 1024
                 st.metric("ファイルサイズ", f"{file_size:.2f} KB")
+                st.success("✅ データは永続的に保存されています")
         
         # 記事一覧の表示/非表示
         show_list = st.checkbox("📖 登録済み記事一覧を表示", value=True)
