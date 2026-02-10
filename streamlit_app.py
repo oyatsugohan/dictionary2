@@ -820,25 +820,54 @@ else:
                     new_category = st.text_input("🏷️ カテゴリー", value=category_str, placeholder="カンマ区切りで複数指定可能", key=f"category_{article_to_edit}")
                     
                     existing_images = current_data.get('images', [])
+                    
+                    # セッション状態で削除する画像を管理
+                    delete_key = f"images_to_delete_{article_to_edit}"
+                    if delete_key not in st.session_state:
+                        st.session_state[delete_key] = []
+                    
                     if existing_images:
-                        st.write(f"**現在の画像: {len(existing_images)}枚**")
+                        st.markdown("### 🖼️ 現在の画像")
+                        st.write(f"**登録済み画像: {len(existing_images)}枚**")
+                        
+                        # 画像を個別に表示して削除チェックボックスを追加
                         current_img_cols = st.columns(min(len(existing_images), 3))
                         for idx, img_data in enumerate(existing_images):
                             current_img = decode_image(img_data)
                             if current_img:
                                 with current_img_cols[idx % 3]:
-                                    st.image(current_img, caption=f"画像 {idx + 1}", width=150)
+                                    st.image(current_img, caption=f"画像 {idx + 1}")
+                                    # 個別削除チェックボックス
+                                    delete_this = st.checkbox(
+                                        f"🗑️ 削除", 
+                                        key=f"delete_img_{article_to_edit}_{idx}",
+                                        help=f"画像{idx + 1}を削除"
+                                    )
+                                    if delete_this and idx not in st.session_state[delete_key]:
+                                        st.session_state[delete_key].append(idx)
+                                    elif not delete_this and idx in st.session_state[delete_key]:
+                                        st.session_state[delete_key].remove(idx)
+                        
+                        if st.session_state[delete_key]:
+                            st.warning(f"⚠️ {len(st.session_state[delete_key])}枚の画像が削除予定です")
                     
-                    uploaded_images = st.file_uploader("🖼️ 新しい画像をアップロード（任意・複数選択可・空欄の場合は既存の画像を保持）", 
-                                                     type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
-                                                     accept_multiple_files=True,
-                                                     key=f"edit_images_{article_to_edit}")
+                    st.markdown("---")
+                    
+                    # 新しい画像の追加
+                    st.markdown("### ➕ 新しい画像を追加")
+                    uploaded_images = st.file_uploader(
+                        "🖼️ 画像を追加（複数選択可）", 
+                        type=['png', 'jpg', 'jpeg', 'gif', 'webp'],
+                        accept_multiple_files=True,
+                        key=f"edit_images_{article_to_edit}",
+                        help="既存の画像に追加されます"
+                    )
                     if uploaded_images:
-                        st.write(f"**新しい画像: {len(uploaded_images)}枚**")
+                        st.write(f"**追加する画像: {len(uploaded_images)}枚**")
                         new_img_cols = st.columns(min(len(uploaded_images), 3))
                         for idx, img_file in enumerate(uploaded_images):
                             with new_img_cols[idx % 3]:
-                                st.image(img_file, caption=f"新しい画像 {idx + 1}", width=150)
+                                st.image(img_file, caption=f"新しい画像 {idx + 1}")
                     
                     delete_images = st.checkbox("🗑️ すべての画像を削除する", key=f"delete_img_{article_to_edit}")
                     
@@ -884,12 +913,13 @@ else:
                             if not categories:
                                 categories = ["未分類"]
                             
-                            images_data = current_data.get('images', [])
+                            # 既存画像から削除対象を除外
+                            existing_images_list = current_data.get('images', [])
+                            images_data = [img for idx, img in enumerate(existing_images_list) 
+                                         if idx not in st.session_state[delete_key]]
                             
-                            if delete_images:
-                                images_data = []
-                            elif uploaded_images:
-                                images_data = []
+                            # 新しい画像を追加
+                            if uploaded_images:
                                 for img_file in uploaded_images:
                                     img_file.seek(0)
                                     encoded = encode_image(img_file)
@@ -905,6 +935,9 @@ else:
                                           created=current_data.get("created")):
                                 # セッション状態を更新
                                 st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.username)
+                                
+                                # 削除リストをクリア
+                                st.session_state[delete_key] = []
                                 
                                 st.success(f"✅ 記事「{new_title}」を更新しました！")
                                 st.rerun()
