@@ -10,12 +10,12 @@ import os
 import re
 
 # ★★★ データベースファイルのパス設定を改善 ★★★
-# カレントディレクトリに確実に保存
-DB_FILE = "encyclopedia.db"
+# ホームディレクトリに固定して保存（推奨）
+DB_FILE = os.path.expanduser("~/encyclopedia.db")
 
-# 絶対パスで保存する場合（推奨）
-# ホームディレクトリまたは固定の場所に保存
-# DB_FILE = os.path.expanduser("~/encyclopedia.db")
+# または、スクリプトと同じディレクトリに保存する場合
+# SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# DB_FILE = os.path.join(SCRIPT_DIR, "encyclopedia.db")
 
 # データベース接続の初期化（改善版）
 def init_db():
@@ -86,9 +86,15 @@ def get_db_connection():
         st.error(f"データベース接続エラー: {e}")
         return None
 
-# パスワードのハッシュ化
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+# パスワードのハッシュ化（改善版：ソルト付き）
+def hash_password(password, username=None):
+    """パスワードをハッシュ化（ユーザー名をソルトとして使用）"""
+    if username:
+        # ユーザー名をソルトとして使用
+        salted = f"{username}:{password}"
+    else:
+        salted = password
+    return hashlib.sha256(salted.encode()).hexdigest()
 
 # 画像をBase64エンコード
 def encode_image(image_file):
@@ -176,7 +182,7 @@ def register_user(username, password):
         c.execute('''
             INSERT INTO users (username, password, created)
             VALUES (?, ?, ?)
-        ''', (username, hash_password(password), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        ''', (username, hash_password(password, username), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         print(f"✅ ユーザー登録成功: {username}")
         return True
@@ -199,7 +205,7 @@ def authenticate_user(username, password):
         c = conn.cursor()
         c.execute('SELECT password FROM users WHERE username = ?', (username,))
         result = c.fetchone()
-        if result and result[0] == hash_password(password):
+        if result and result[0] == hash_password(password, username):
             print(f"✅ ログイン成功: {username}")
             return True
         print(f"⚠️ ログイン失敗: {username}")
@@ -303,12 +309,62 @@ def delete_article(username, title):
 def backup_database():
     """データベースをバックアップ"""
     if os.path.exists(DB_FILE):
-        backup_file = f"encyclopedia_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        # バックアップファイルもホームディレクトリに保存
+        backup_file = os.path.expanduser(f"~/encyclopedia_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
         import shutil
         shutil.copy(DB_FILE, backup_file)
         print(f"✅ バックアップ作成: {backup_file}")
         return backup_file
     return None
+
+# 既存のバックアップファイルを検索
+def find_backup_files():
+    """ホームディレクトリ内のバックアップファイルを検索"""
+    home_dir = os.path.expanduser("~")
+    backup_files = []
+    try:
+        for file in os.listdir(home_dir):
+            if file.startswith("encyclopedia_backup_") and file.endswith(".db"):
+                full_path = os.path.join(home_dir, file)
+                backup_files.append({
+                    "name": file,
+                    "path": full_path,
+                    "size": os.path.getsize(full_path),
+                    "modified": datetime.fromtimestamp(os.path.getmtime(full_path))
+                })
+        return sorted(backup_files, key=lambda x: x["modified"], reverse=True)
+    except Exception as e:
+        print(f"❌ バックアップファイル検索エラー: {e}")
+        return []
+
+# バックアップから復元
+def restore_from_backup(backup_path):
+    """バックアップファイルから復元"""
+    try:
+        import shutil
+        # 現在のDBをバックアップ
+        if os.path.exists(DB_FILE):
+            temp_backup = os.path.expanduser(f"~/encyclopedia_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+            shutil.copy(DB_FILE, temp_backup)
+            print(f"✅ 現在のDBをバックアップ: {temp_backup}")
+        
+        # バックアップから復元
+        shutil.copy(backup_path, DB_FILE)
+        print(f"✅ 復元成功: {backup_path}")
+        
+        # 接続をリセット
+        if "db_conn" in st.session_state:
+            try:
+                st.session_state.db_conn.close()
+            except:
+                pass
+            del st.session_state.db_conn
+        
+        return True
+    except Exception as e:
+        print(f"❌ 復元エラー: {e}")
+        st.error(f"復元エラー: {e}")
+        return False
 
 # アプリの設定
 st.set_page_config(page_title="オリジナル百科事典", page_icon="📚", layout="wide")
@@ -359,7 +415,7 @@ if not st.session_state.logged_in:
     st.markdown("---")
     
     # データベースの場所を表示
-    with st.expander("ℹ️ システム情報"):
+    with st.expander("ℹ️ システム情報", expanded=True):
         db_abs_path = os.path.abspath(DB_FILE)
         st.info(f"**データベースの場所**: `{db_abs_path}`")
         if os.path.exists(DB_FILE):
@@ -368,7 +424,34 @@ if not st.session_state.logged_in:
             st.success("💾 **すべてのデータは永続的に保存されます！**")
             st.info("電源を切っても、PCを再起動しても、数日後でもデータは保持されます。")
         else:
-            st.warning("データベースは初回起動時に作成されます")
+            st.warning("⚠️ データベースファイルが見つかりません。初回起動時に作成されます。")
+        
+        # バックアップファイルの検索と表示
+        backup_files = find_backup_files()
+        if backup_files:
+            st.markdown("---")
+            st.success(f"🔍 **{len(backup_files)}件のバックアップファイルが見つかりました**")
+            
+            selected_backup = st.selectbox(
+                "復元するバックアップを選択（任意）",
+                options=["復元しない"] + [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files],
+                key="backup_selector"
+            )
+            
+            if selected_backup != "復元しない":
+                backup_idx = [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files].index(selected_backup)
+                selected_backup_path = backup_files[backup_idx]["path"]
+                
+                st.warning(f"⚠️ 「{backup_files[backup_idx]['name']}」から復元しますか？")
+                st.caption("現在のデータベースは自動的にバックアップされます。")
+                
+                if st.button("🔄 復元を実行", type="primary"):
+                    if restore_from_backup(selected_backup_path):
+                        st.success("✅ 復元が完了しました！ページを再読み込みしてください。")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("復元に失敗しました。")
     
     tab1, tab2 = st.tabs(["🔐 ログイン", "✍️ 新規登録"])
     
@@ -442,6 +525,7 @@ else:
         # データベース情報
         with st.expander("💾 データベース情報"):
             st.info(f"**保存場所**: {os.path.basename(DB_FILE)}")
+            st.caption(f"完全パス: {DB_FILE}")
             if os.path.exists(DB_FILE):
                 file_size = os.path.getsize(DB_FILE) / 1024
                 st.metric("ファイルサイズ", f"{file_size:.2f} KB")
