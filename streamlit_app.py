@@ -390,6 +390,19 @@ st.markdown("""
     .green-btn { background-color: #8bc34a; }
     .blue-btn { background-color: #03a9f4; color: white; }
     .red-btn { background-color: #f44336; color: white; }
+    
+    /* サムネイル画像のサイズ制限（通常表示時のみ） */
+    [data-testid="column"] img {
+        max-width: 200px;
+        height: auto;
+    }
+    
+    /* 全画面表示時は制限を解除 */
+    [data-testid="StyledFullScreenFrame"] img {
+        max-width: 100% !important;
+        width: auto !important;
+        height: auto !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -612,8 +625,8 @@ else:
                             img = decode_image(img_data)
                             if img:
                                 with img_cols[idx % 3]:
-                                    # 通常表示は小さく、全画面表示ボタンで高画質表示
-                                    st.image(img, caption=f"画像 {idx + 1}", width=200)
+                                    # CSSでサイズ制御、全画面表示時は自動的に大きく表示
+                                    st.image(img, caption=f"画像 {idx + 1}")
                     
                     st.markdown("---")
                     
