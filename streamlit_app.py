@@ -612,8 +612,8 @@ else:
                             img = decode_image(img_data)
                             if img:
                                 with img_cols[idx % 3]:
-                                    # use_column_widthをTrueにすることで全画面表示時に高画質表示
-                                    st.image(img, caption=f"画像 {idx + 1}", use_column_width=True)
+                                    # 通常表示は小さく、全画面表示ボタンで高画質表示
+                                    st.image(img, caption=f"画像 {idx + 1}", width=200)
                     
                     st.markdown("---")
                     
