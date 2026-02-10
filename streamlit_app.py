@@ -102,7 +102,8 @@ def encode_image(image_file):
     if image_file is not None:
         img = Image.open(image_file)
         
-        max_width = 800
+        # 最大幅を1920pxに拡大（全画面表示時に高画質）
+        max_width = 1920
         if img.width > max_width:
             ratio = max_width / img.width
             new_height = int(img.height * ratio)
@@ -111,7 +112,8 @@ def encode_image(image_file):
         buffered = BytesIO()
         img_format = img.format if img.format else 'PNG'
         if img_format == 'JPEG':
-            img.save(buffered, format=img_format, quality=95, optimize=True)
+            # 画質を最高レベルに設定
+            img.save(buffered, format=img_format, quality=98, optimize=True)
         else:
             img.save(buffered, format=img_format, optimize=True)
         
@@ -605,32 +607,13 @@ else:
                     images = content.get('images', [])
                     if images:
                         st.markdown("**📷 画像:**")
-                        
-                        # 画像表示モードの選択
-                        view_mode = st.radio(
-                            "表示モード",
-                            ["サムネイル表示", "拡大表示"],
-                            horizontal=True,
-                            key=f"view_mode_{st.session_state.selected_article}"
-                        )
-                        
-                        if view_mode == "サムネイル表示":
-                            # 従来のサムネイル表示
-                            img_cols = st.columns(min(len(images), 3))
-                            for idx, img_data in enumerate(images):
-                                img = decode_image(img_data)
-                                if img:
-                                    with img_cols[idx % 3]:
-                                        st.image(img, caption=f"画像 {idx + 1}", width=150)
-                        else:
-                            # 拡大表示モード
-                            for idx, img_data in enumerate(images):
-                                img = decode_image(img_data)
-                                if img:
-                                    st.markdown(f"**画像 {idx + 1}**")
-                                    # use_container_width=Trueで画面幅いっぱいに表示
-                                    st.image(img, use_container_width=True)
-                                    st.markdown("---")
+                        img_cols = st.columns(min(len(images), 3))
+                        for idx, img_data in enumerate(images):
+                            img = decode_image(img_data)
+                            if img:
+                                with img_cols[idx % 3]:
+                                    # use_column_widthをTrueにすることで全画面表示時に高画質表示
+                                    st.image(img, caption=f"画像 {idx + 1}", use_column_width=True)
                     
                     st.markdown("---")
                     
