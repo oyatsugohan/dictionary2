@@ -9,7 +9,7 @@ from PIL import Image
 import os
 import re
 
-DB_FILE = os.path.expanduser("~/encyclopedia.db")
+DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "encyclopedia.db")
 
 def init_db():
     try:
