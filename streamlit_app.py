@@ -9,7 +9,12 @@ from PIL import Image
 import os
 import re
 
-DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "encyclopedia.db")
+# DBファイルのパスを確実に固定する
+# 環境変数 ENCYCLOPEDIA_DB_PATH が設定されていればそれを使用、なければスクリプトと同じフォルダ
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() else os.getcwd()
+DB_FILE = os.environ.get("ENCYCLOPEDIA_DB_PATH", os.path.join(_SCRIPT_DIR, "encyclopedia.db"))
+# 起動時にパスをターミナルに表示（確認用）
+print(f"📂 DB保存先: {os.path.abspath(DB_FILE)}")
 
 def init_db():
     try:
@@ -143,8 +148,23 @@ def authenticate_user(username, password):
         c = conn.cursor()
         c.execute('SELECT password FROM users WHERE username = ?', (username,))
         result = c.fetchone()
-        if result and result[0] == hash_password(password, username):
+        if not result:
+            return False
+
+        stored_hash = result[0]
+
+        # 新方式（ソルトあり）で照合
+        if stored_hash == hash_password(password, username):
             return True
+
+        # 旧方式（ソルトなし）で照合 → 一致したら新方式に自動移行
+        if stored_hash == hash_password(password, username=None):
+            new_hash = hash_password(password, username)
+            c.execute('UPDATE users SET password = ? WHERE username = ?', (new_hash, username))
+            conn.commit()
+            print(f"🔄 パスワードを新方式に移行しました: {username}")
+            return True
+
         return False
     except Exception as e:
         st.error(f"認証エラー: {e}")
@@ -311,38 +331,37 @@ if not st.session_state.logged_in:
     st.title("📚 オリジナル百科事典")
     st.markdown("---")
 
-    with st.expander("ℹ️ システム情報", expanded=True):
-        db_abs_path = os.path.abspath(DB_FILE)
-        st.info(f"**データベースの場所**: `{db_abs_path}`")
-        if os.path.exists(DB_FILE):
-            file_size = os.path.getsize(DB_FILE) / 1024
-            st.success(f"✅ データベースが見つかりました（サイズ: {file_size:.2f} KB）")
-            st.success("💾 **すべてのデータは永続的に保存されます！**")
-            st.info("電源を切っても、PCを再起動しても、数日後でもデータは保持されます。")
-        else:
-            st.warning("⚠️ データベースファイルが見つかりません。初回起動時に作成されます。")
+    # ② expander を廃止（"arrive right/down" 文字化け対策）
+    db_abs_path = os.path.abspath(DB_FILE)
+    st.markdown("#### ℹ️ システム情報")
+    st.info(f"**データベースの保存場所**: `{db_abs_path}`")
+    if os.path.exists(DB_FILE):
+        file_size = os.path.getsize(DB_FILE) / 1024
+        st.success(f"✅ データベースが見つかりました（サイズ: {file_size:.2f} KB）　💾 データは永続的に保存されます！")
+    else:
+        st.warning("⚠️ データベースファイルが見つかりません。ログイン後に自動作成されます。")
 
-        backup_files = find_backup_files()
-        if backup_files:
-            st.markdown("---")
-            st.success(f"🔍 **{len(backup_files)}件のバックアップファイルが見つかりました**")
-            selected_backup = st.selectbox(
-                "復元するバックアップを選択（任意）",
-                options=["復元しない"] + [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files],
-                key="backup_selector"
-            )
-            if selected_backup != "復元しない":
-                backup_idx = [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files].index(selected_backup)
-                selected_backup_path = backup_files[backup_idx]["path"]
-                st.warning(f"⚠️ 「{backup_files[backup_idx]['name']}」から復元しますか？")
-                st.caption("現在のデータベースは自動的にバックアップされます。")
-                if st.button("🔄 復元を実行", type="primary"):
-                    if restore_from_backup(selected_backup_path):
-                        st.success("✅ 復元が完了しました！ページを再読み込みしてください。")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error("復元に失敗しました。")
+    backup_files = find_backup_files()
+    if backup_files:
+        st.markdown("---")
+        st.success(f"🔍 **{len(backup_files)}件のバックアップファイルが見つかりました**")
+        selected_backup = st.selectbox(
+            "復元するバックアップを選択（任意）",
+            options=["復元しない"] + [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files],
+            key="backup_selector"
+        )
+        if selected_backup != "復元しない":
+            backup_idx = [f"{b['name']} ({b['modified'].strftime('%Y-%m-%d %H:%M:%S')}, {b['size']/1024:.2f} KB)" for b in backup_files].index(selected_backup)
+            selected_backup_path = backup_files[backup_idx]["path"]
+            st.warning(f"⚠️ 「{backup_files[backup_idx]['name']}」から復元しますか？")
+            st.caption("現在のデータベースは自動的にバックアップされます。")
+            if st.button("🔄 復元を実行", type="primary"):
+                if restore_from_backup(selected_backup_path):
+                    st.success("✅ 復元が完了しました！ページを再読み込みしてください。")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error("復元に失敗しました。")
 
     tab1, tab2 = st.tabs(["🔐 ログイン", "✍️ 新規登録"])
 
@@ -416,13 +435,11 @@ else:
         st.header("メニュー")
         menu = st.radio("機能を選択", ["🔍 記事を検索", "➕ 新規記事作成", "📝 記事を編集", "🗑️ 記事を削除", "📊 統計情報"])
         st.markdown("---")
-        with st.expander("💾 データベース情報"):
-            st.info(f"**保存場所**: {os.path.basename(DB_FILE)}")
-            st.caption(f"完全パス: {DB_FILE}")
-            if os.path.exists(DB_FILE):
-                file_size = os.path.getsize(DB_FILE) / 1024
-                st.metric("ファイルサイズ", f"{file_size:.2f} KB")
-                st.success("✅ データは永続的に保存されています")
+        st.markdown("**💾 データベース情報**")
+        st.caption(f"保存先: {os.path.abspath(DB_FILE)}")
+        if os.path.exists(DB_FILE):
+            file_size = os.path.getsize(DB_FILE) / 1024
+            st.caption(f"サイズ: {file_size:.2f} KB　✅ 保存済み")
         show_list = st.checkbox("📖 登録済み記事一覧を表示", value=True)
         if show_list:
             st.session_state.encyclopedia = get_user_encyclopedia(st.session_state.username)
